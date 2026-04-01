@@ -1,121 +1,157 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useState } from "react";
+import type { TimeEntry, Project } from "./api";
+import { getEntries, getProjects, getRunningEntry } from "./api";
+import TimerBar from "./components/TimerBar";
+import EntryList from "./components/EntryList";
+import ProjectsPanel from "./components/ProjectsPanel";
+import StatsBar from "./components/StatsBar";
 
-function App() {
-  const [count, setCount] = useState(0)
+type View = "log" | "projects";
+
+export default function App() {
+  const [entries, setEntries] = useState<TimeEntry[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [running, setRunning] = useState<TimeEntry | null>(null);
+  const [view, setView] = useState<View>("log");
+  const [statsKey, setStatsKey] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  // Bootstrap
+  useEffect(() => {
+    Promise.all([getEntries(), getProjects(), getRunningEntry()])
+      .then(([e, p, r]) => {
+        setEntries(e);
+        setProjects(p);
+        setRunning(r);
+      })
+      .catch(console.error)
+      .finally(() => setReady(true));
+  }, []);
+
+  const handleStarted = (entry: TimeEntry) => {
+    setRunning(entry);
+    setEntries((prev) => [entry, ...prev]);
+    setStatsKey((k) => k + 1);
+  };
+
+  const handleStopped = (stopped: TimeEntry) => {
+    setRunning(null);
+    setEntries((prev) => prev.map((e) => (e.id === stopped.id ? stopped : e)));
+    setStatsKey((k) => k + 1);
+  };
+
+  const handleEntryDeleted = (id: string) => {
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setStatsKey((k) => k + 1);
+  };
+
+  const handleProjectCreated = (p: Project) => {
+    setProjects((prev) => [...prev, p]);
+  };
+
+  const handleProjectDeleted = (id: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  if (!ready) {
+    return (
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--muted)",
+          fontFamily: "'DM Mono', monospace",
+          fontSize: "0.85rem",
+          letterSpacing: "0.08em",
+        }}
+      >
+        LOADING…
+      </div>
+    );
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Top bar: timer ──────────────────────────────────────────────── */}
+      <TimerBar
+        running={running}
+        projects={projects}
+        onStarted={handleStarted}
+        onStopped={handleStopped}
+      />
 
-      <div className="ticks"></div>
+      {/* ── Nav ─────────────────────────────────────────────────────────── */}
+      <nav
+        style={{
+          display: "flex",
+          gap: 2,
+          padding: "8px 24px",
+          background: "var(--surface)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        {(["log", "projects"] as View[]).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: "5px 14px",
+              borderRadius: 5,
+              fontFamily: "'Syne', sans-serif",
+              fontWeight: 700,
+              fontSize: "0.75rem",
+              letterSpacing: "0.09em",
+              textTransform: "uppercase",
+              cursor: "pointer",
+              color: view === v ? "var(--accent)" : "var(--muted)",
+              background: view === v ? "var(--accent)16" : "transparent",
+              transition: "color 0.15s, background 0.15s",
+            }}
+          >
+            {v === "log" ? "Time Log" : "Projects"}
+          </button>
+        ))}
+      </nav>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {/* ── Main content ────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        {view === "log" ? (
+          <div
+            style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}
+          >
+            <EntryList
+              entries={entries}
+              projects={projects}
+              onDeleted={handleEntryDeleted}
+            />
+          </div>
+        ) : (
+          <div
+            style={{ flex: 1, overflowY: "auto" }}
+            className="fade-up"
+          >
+            <ProjectsPanel
+              projects={projects}
+              onCreated={handleProjectCreated}
+              onDeleted={handleProjectDeleted}
+            />
+          </div>
+        )}
+      </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* ── Stats footer ────────────────────────────────────────────────── */}
+      <StatsBar projects={projects} refreshKey={statsKey} />
+    </div>
+  );
 }
-
-export default App

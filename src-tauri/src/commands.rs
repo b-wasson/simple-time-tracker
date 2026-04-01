@@ -187,6 +187,16 @@ pub fn delete_entry(app: AppHandle, entry_id: String) -> Result<String, String> 
     Ok(entry_id)
 }
 
+/// Clear all entries command
+#[tauri::command]
+pub fn clear_all_entries(app: AppHandle) -> Result<usize, String> {
+    let mut store = storage::load(&app)?;
+    let count = store.entries.len();
+    store.entries.clear();
+    storage::save(&app, &store)?;
+    Ok(count)
+}
+
 /// Update an entry's description, project, or tags (cannot change start/end via this)
 #[tauri::command]
 pub fn update_entry(
@@ -299,4 +309,122 @@ fn today_start_ms() -> u64 {
     // Floor to nearest day (UTC)
     let ms_per_day = 86_400_000u64;
     (now / ms_per_day) * ms_per_day
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  GOAL COMMANDS
+// ════════════════════════════════════════════════════════════════════════════
+
+use crate::models::{Goal, GoalPeriod};
+
+#[derive(Serialize)]
+pub struct GoalProgress {
+    pub goal: Goal,
+    pub logged_secs: u64,   // how much has been tracked this period
+    pub percent: f64,       // 0.0 – 100.0+ (can exceed 100)
+}
+
+/// List all goals with current period progress
+#[tauri::command]
+pub fn get_goals(app: AppHandle) -> Result<Vec<GoalProgress>, String> {
+    let store = storage::load(&app)?;
+    let now = crate::models::now_ms();
+    let ms_per_day = 86_400_000u64;
+    let today_start = (now / ms_per_day) * ms_per_day;
+    // ISO week start (Monday)
+    let day_of_week = ((now / ms_per_day + 3) % 7) as u64; // 0=Mon
+    let week_start = today_start - day_of_week * ms_per_day;
+
+    let goals_with_progress = store.goals.iter().map(|goal| {
+        let period_start = match goal.period {
+            GoalPeriod::Daily  => today_start,
+            GoalPeriod::Weekly => week_start,
+        };
+
+        let logged_secs: u64 = store.entries.iter()
+            .filter(|e| e.start_ms >= period_start && e.project_id == goal.project_id)
+            .map(|e| e.duration_secs())
+            .sum();
+
+        let percent = if goal.target_secs > 0 {
+            (logged_secs as f64 / goal.target_secs as f64) * 100.0
+        } else { 0.0 };
+
+        GoalProgress { goal: goal.clone(), logged_secs, percent }
+    }).collect();
+
+    Ok(goals_with_progress)
+}
+
+/// Create a new goal
+#[tauri::command]
+pub fn create_goal(
+    app: AppHandle,
+    project_id: Option<String>,
+    label: String,
+    target_secs: u64,
+    period: String,
+) -> Result<Goal, String> {
+    if label.trim().is_empty() {
+        return Err("Goal label cannot be empty".into());
+    }
+    if target_secs == 0 {
+        return Err("Target must be greater than zero".into());
+    }
+    let period = match period.as_str() {
+        "daily"  => GoalPeriod::Daily,
+        "weekly" => GoalPeriod::Weekly,
+        other    => return Err(format!("Unknown period '{other}'")),
+    };
+    let mut store = storage::load(&app)?;
+    if let Some(ref pid) = project_id {
+        if !store.projects.iter().any(|p| &p.id == pid) {
+            return Err(format!("Project '{pid}' not found"));
+        }
+    }
+    let goal = Goal::new(project_id, label, target_secs, period);
+    store.goals.push(goal.clone());
+    storage::save(&app, &store)?;
+    Ok(goal)
+}
+
+/// Delete a goal by id
+#[tauri::command]
+pub fn delete_goal(app: AppHandle, goal_id: String) -> Result<String, String> {
+    let mut store = storage::load(&app)?;
+    let before = store.goals.len();
+    store.goals.retain(|g| g.id != goal_id);
+    if store.goals.len() == before {
+        return Err(format!("Goal '{goal_id}' not found"));
+    }
+    storage::save(&app, &store)?;
+    Ok(goal_id)
+}
+
+/// Update a goal's label, target, or period
+#[tauri::command]
+pub fn update_goal(
+    app: AppHandle,
+    goal_id: String,
+    label: Option<String>,
+    target_secs: Option<u64>,
+    period: Option<String>,
+) -> Result<Goal, String> {
+    let mut store = storage::load(&app)?;
+    let goal = store.goals.iter_mut()
+        .find(|g| g.id == goal_id)
+        .ok_or_else(|| format!("Goal '{goal_id}' not found"))?;
+
+    if let Some(l) = label { goal.label = l; }
+    if let Some(t) = target_secs { goal.target_secs = t; }
+    if let Some(p) = period {
+        goal.period = match p.as_str() {
+            "daily"  => GoalPeriod::Daily,
+            "weekly" => GoalPeriod::Weekly,
+            other    => return Err(format!("Unknown period '{other}'")),
+        };
+    }
+    let updated = goal.clone();
+    storage::save(&app, &store)?;
+    Ok(updated)
 }

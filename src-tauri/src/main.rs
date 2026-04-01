@@ -1,4 +1,3 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
@@ -20,10 +19,16 @@ fn main() {
             commands::stop_timer,
             commands::get_running_entry,
             commands::delete_entry,
+            commands::clear_all_entries,
             commands::update_entry,
             // Stats
             commands::get_today_total,
             commands::get_today_by_project,
+            // Goals
+            commands::get_goals,
+            commands::create_goal,
+            commands::update_goal,
+            commands::delete_goal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
